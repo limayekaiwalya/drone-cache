@@ -28,4 +28,6 @@ type Config struct {
 	Secret string
 
 	PathStyle bool // Use path style instead of domain style. Should be true for minio and false for AWS.
+
+	TTL string // TTL for the archive. This will be communicated to S3 as a part of `BucketLifecycleConfiguration`
 }

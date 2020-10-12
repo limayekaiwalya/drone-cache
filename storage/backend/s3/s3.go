@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -26,10 +27,13 @@ type Backend struct {
 	acl        string
 	encryption string
 	client     *s3.S3
+	expiresAt  time.Time
 }
 
 // New creates an S3 backend.
 func New(l log.Logger, c Config, debug bool) (*Backend, error) {
+	var expiresAt time.Time
+
 	conf := &aws.Config{
 		Region:           aws.String(c.Region),
 		Endpoint:         &c.Endpoint,
@@ -50,6 +54,14 @@ func New(l log.Logger, c Config, debug bool) (*Backend, error) {
 		conf.WithLogLevel(aws.LogDebugWithHTTPBody)
 	}
 
+	if c.TTL != "" {
+		duration, err := time.ParseDuration(c.TTL)
+		if err != nil {
+			return nil, err
+		}
+		expiresAt = time.Now().Add(duration)
+	}
+
 	client := s3.New(session.Must(session.NewSessionWithOptions(session.Options{})), conf)
 
 	return &Backend{
@@ -58,6 +70,7 @@ func New(l log.Logger, c Config, debug bool) (*Backend, error) {
 		acl:        c.ACL,
 		encryption: c.Encryption,
 		client:     client,
+		expiresAt:  expiresAt,
 	}, nil
 }
 
@@ -112,6 +125,31 @@ func (b *Backend) Put(ctx context.Context, p string, r io.Reader) error {
 	}
 
 	if _, err := uploader.UploadWithContext(ctx, in); err != nil {
+		return fmt.Errorf("put the object, %w", err)
+	}
+
+	// Check whether TTL flag is supplied. If so, add a lifecycle configuration to the bucket, matching the key
+
+	lifecycleConfiguration := &s3.BucketLifecycleConfiguration{
+		Rules: []*s3.LifecycleRule{
+			&s3.LifecycleRule{
+				Filter: &s3.LifecycleRuleFilter{
+					Prefix: aws.String(p),
+				},
+				Expiration: &s3.LifecycleExpiration{
+					Date: &b.expiresAt,
+				},
+			},
+		},
+	}
+
+	putBucketLifecycleConfigurationInput := &s3.PutBucketLifecycleConfigurationInput{
+		Bucket:                 aws.String(b.bucket),
+		LifecycleConfiguration: lifecycleConfiguration,
+	}
+
+	_, err := b.client.PutBucketLifecycleConfiguration(putBucketLifecycleConfigurationInput)
+	if err != nil {
 		return fmt.Errorf("put the object, %w", err)
 	}
 

@@ -363,6 +363,11 @@ func main() {
 			Usage:   "server-side encryption algorithm, defaults to none. (AES256, aws:kms)",
 			EnvVars: []string{"PLUGIN_ENCRYPTION", "AWS_ENCRYPTION"},
 		},
+		&cli.StringFlag{
+			Name:    "ttl",
+			Usage:   "lifetime of the archive, beyond which it will be deleted by the backend. (30m, 24h)",
+			EnvVars: []string{"TTL"},
+		},
 
 		// GCS specific Configs flags
 
@@ -536,6 +541,7 @@ func run(c *cli.Context) error {
 			PathStyle:  c.Bool("path-style"),
 			Region:     c.String("region"),
 			Secret:     c.String("secret-key"),
+			TTL:        c.String("ttl"),
 		},
 		Azure: azure.Config{
 			AccountName:    c.String("azure.account-name"),
